@@ -124,12 +124,12 @@ an image and a database; only the command differs.
 
 ### Environment
 
-| Variable | Where | Notes |
-| -------- | ----- | ----- |
-| `VITE_SUPABASE_URL` | **build time** | Inlined into the client bundle |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | **build time** | Inlined into the client bundle |
-| `APP_URL` | runtime | Public URL, e.g. `https://app.example.com` |
-| `SUPABASE_SERVICE_ROLE_KEY` | runtime, worker only | Bypasses RLS — never prefix `VITE_` |
+| Variable                        | Where                | Notes                                      |
+| ------------------------------- | -------------------- | ------------------------------------------ |
+| `VITE_SUPABASE_URL`             | **build time**       | Inlined into the client bundle             |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | **build time**       | Inlined into the client bundle             |
+| `APP_URL`                       | runtime              | Public URL, e.g. `https://app.example.com` |
+| `SUPABASE_SERVICE_ROLE_KEY`     | runtime, worker only | Bypasses RLS — never prefix `VITE_`        |
 
 `VITE_*` values are baked in when the bundle is compiled, **not** read at runtime.
 Setting them only on the running container produces a build that cannot reach

@@ -217,6 +217,12 @@ export function MailboxPoolPanel() {
                           ? ` · warming up to ${m.dailyLimit}`
                           : ""}
                       </p>
+                      {/* Shows what is actually stored, so a wrong host or
+                          username is visible without opening the form. */}
+                      <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                        {m.smtpUser} → {m.smtpHost}:{m.smtpPort} ·{" "}
+                        {m.hasPassword ? "password saved" : "NO PASSWORD"}
+                      </p>
                       {m.pausedReason && (
                         <p className="mt-1 text-xs text-warning">{m.pausedReason}</p>
                       )}
@@ -292,6 +298,11 @@ export function MailboxPoolPanel() {
 
       {editing && (
         <MailboxForm
+          // Forces a remount when switching between mailboxes. The form seeds
+          // its state with useState(value), which only runs on mount — without
+          // this, clicking Edit on a second mailbox while the first is open
+          // keeps the first one's data, id included, and saves to the wrong row.
+          key={editing.id ?? "new"}
           value={editing}
           onCancel={() => setEditing(null)}
           onSave={async (v) => {

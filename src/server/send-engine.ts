@@ -27,6 +27,12 @@ export type DrainResult = {
   skipped: number;
   /** Set when nothing could be sent, explaining why. */
   blocked?: string;
+  /**
+   * Distinct failure reasons from this pass, each tagged with the mailbox that
+   * produced it. Without these a caller only sees a count, and "2 failed" with
+   * no reason is unactionable.
+   */
+  errors: string[];
 };
 
 /** Messages taken by one mailbox in a single pass, so rotation stays even. */
@@ -45,7 +51,17 @@ export async function drainQueue(
   userId: string,
   opts: { max: number; appUrl: string; useServiceRole?: boolean },
 ): Promise<DrainResult> {
-  const out: DrainResult = { claimed: 0, sent: 0, failed: 0, skipped: 0 };
+  const out: DrainResult = { claimed: 0, sent: 0, failed: 0, skipped: 0, errors: [] };
+  // Deduplicated: 500 recipients failing on one bad password is one problem,
+  // not 500.
+  const seenErrors = new Set<string>();
+  const noteError = (mailbox: string, message: string) => {
+    const line = `${mailbox}: ${message}`;
+    if (!seenErrors.has(line)) {
+      seenErrors.add(line);
+      out.errors.push(line);
+    }
+  };
 
   const [{ data: mailboxRows }, { data: statusRows }, { data: settingsRow }] = await Promise.all([
     client.from("email_accounts").select("*").eq("user_id", userId).returns<MailboxRow[]>(),
@@ -59,7 +75,7 @@ export async function drainQueue(
   const settings = settingsRow ? toSettings(settingsRow) : null;
 
   if (mailboxes.length === 0) {
-    return { ...out, blocked: "No mailboxes connected. Add one in Settings." };
+    return { ...out, errors: out.errors, blocked: "No mailboxes connected. Add one in Settings." };
   }
 
   const usable = sendableMailboxes(mailboxes);
@@ -244,6 +260,7 @@ export async function drainQueue(
           const message = friendlySmtpError(err, row.smtp_host);
           const permanent = isPermanentSmtpError(err);
           failuresThisPass += 1;
+          noteError(row.from_email, message);
 
           // A permanent rejection will never succeed on retry — a bad address,
           // a refused sender. Retrying only burns allowance.

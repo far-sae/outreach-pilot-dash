@@ -175,7 +175,12 @@ export const saveMailbox = createServerFn({ method: "POST" })
     };
     // Blank means "keep what is stored", so host or port can be edited without
     // retyping the password.
-    if (data.smtpPassword) row["smtp_password"] = data.smtpPassword;
+    //
+    // Trimmed because app passwords are almost always pasted, and a trailing
+    // space or newline picked up from the clipboard is invisible in a password
+    // field while failing authentication exactly like a wrong password.
+    const pasted = data.smtpPassword.trim();
+    if (pasted) row["smtp_password"] = pasted;
 
     if (data.id) {
       const { error } = await client
@@ -257,7 +262,11 @@ export const verifyMailbox = createServerFn({ method: "POST" })
         .eq("id", row.id);
       return { ok: true as const };
     } catch (err) {
-      throw new Error(friendlySmtpError(err, row.smtp_host));
+      // Name the mailbox and server: with a pool, an error that says only
+      // "rejected" leaves you unable to tell which mailbox was even tested.
+      throw new Error(
+        `${row.smtp_user} via ${row.smtp_host}:${row.smtp_port} — ${friendlySmtpError(err, row.smtp_host)}`,
+      );
     } finally {
       transport.close();
     }

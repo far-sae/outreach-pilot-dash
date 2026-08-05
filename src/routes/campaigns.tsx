@@ -105,6 +105,9 @@ function CampaignsPage() {
           toast.error("Sending is blocked", { description: r.blocked });
           break;
         }
+        if (r.errors?.length) {
+          toast.error("Some messages failed", { description: r.errors[0] ?? "" });
+        }
         if (r.claimed === 0) break;
         sent += r.sent;
       }
@@ -199,6 +202,8 @@ function CampaignsPage() {
           notes.push(r.blocked);
           break;
         }
+        // Surface why messages failed, not just how many.
+        for (const e of r.errors ?? []) if (!notes.includes(e)) notes.push(e);
         if (r.claimed === 0) break;
         sent += r.sent;
         failed += r.failed;

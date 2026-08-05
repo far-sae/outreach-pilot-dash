@@ -52,15 +52,25 @@ export type BodyOptions = {
 };
 
 function footerText(o: BodyOptions) {
+  const custom = o.unsubscribeText?.trim();
+
+  // Custom wording is used exactly as written. If it contains {{unsubscribe}}
+  // the link goes in; if it doesn't, no link is added.
+  //
+  // A URL in the footer is one of the few remaining marketing signals in an
+  // otherwise plain message, and one-to-one email does not carry one. Opting
+  // out by reply is still a genuine opt-out — the List-Unsubscribe mailto
+  // header travels with every message regardless — so this is a real choice
+  // between link-based and reply-based unsubscribe, not a way to omit one.
+  if (custom) return applyUnsubscribe(custom, o.unsubscribeUrl);
+
   if (o.unsubscribeUrl) {
-    const wording = o.unsubscribeText?.trim()
-      ? o.unsubscribeText
-      : "If you would rather not hear from me, unsubscribe here: {{unsubscribe}}";
-    // Wording without the tag still needs the link appended, or the footer
-    // would promise an unsubscribe and not provide one.
-    const withTag = hasUnsubscribeTag(wording) ? wording : `${wording} {{unsubscribe}}`;
-    return applyUnsubscribe(withTag, o.unsubscribeUrl);
+    return applyUnsubscribe(
+      "If you would rather not hear from me, unsubscribe here: {{unsubscribe}}",
+      o.unsubscribeUrl,
+    );
   }
+
   return `Don't want to hear from me again? Reply with "unsubscribe" and I'll remove you${
     o.replyTo ? ` — ${o.replyTo}` : ""
   }.`;

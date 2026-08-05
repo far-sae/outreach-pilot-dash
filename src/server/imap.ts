@@ -15,6 +15,35 @@ export type ImapConfig = {
 export type IncomingMessage = { email: string; at: Date };
 
 /**
+ * Builds a client with an `error` listener already attached.
+ *
+ * ImapFlow is an EventEmitter, and Node terminates the process on an 'error'
+ * event that nobody is listening for. Those arrive asynchronously — a socket
+ * timeout, a dropped TLS connection — so the try/catch around `connect()` never
+ * sees them. Without this listener a stalled IMAP connection kills the server.
+ *
+ * The listener only records: the awaited calls still reject, and the callers
+ * turn that into a normal error.
+ */
+function createImapClient(cfg: ImapConfig): ImapFlow {
+  const client = new ImapFlow({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: { user: cfg.user, pass: cfg.password },
+    logger: false,
+    socketTimeout: 30_000,
+    greetingTimeout: 15_000,
+  });
+
+  client.on("error", (err: unknown) => {
+    console.error(`imap connection error (${cfg.host}):`, err instanceof Error ? err.message : err);
+  });
+
+  return client;
+}
+
+/**
  * Envelope senders of INBOX messages received since `since`. Envelopes only —
  * bodies are never downloaded, which keeps this fast and avoids pulling message
  * content into the app.
@@ -24,16 +53,7 @@ export async function fetchRecentSenders(
   since: Date,
   limit = 500,
 ): Promise<IncomingMessage[]> {
-  const client = new ImapFlow({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.password },
-    logger: false,
-    // Stop a hung connection from holding the request open.
-    socketTimeout: 30_000,
-    greetingTimeout: 15_000,
-  });
+  const client = createImapClient(cfg);
 
   const out: IncomingMessage[] = [];
   await client.connect();
@@ -78,15 +98,7 @@ export async function appendToSent(
 ): Promise<number> {
   if (messages.length === 0) return 0;
 
-  const client = new ImapFlow({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.password },
-    logger: false,
-    socketTimeout: 30_000,
-    greetingTimeout: 15_000,
-  });
+  const client = createImapClient(cfg);
 
   let saved = 0;
   await client.connect();
@@ -141,15 +153,7 @@ export async function fetchBouncedAddresses(
   since: Date,
   limit = 200,
 ): Promise<string[]> {
-  const client = new ImapFlow({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.password },
-    logger: false,
-    socketTimeout: 30_000,
-    greetingTimeout: 15_000,
-  });
+  const client = createImapClient(cfg);
 
   const found = new Set<string>();
   await client.connect();
