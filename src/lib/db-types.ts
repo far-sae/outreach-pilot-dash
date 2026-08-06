@@ -64,6 +64,13 @@ export type SettingsRow = {
   unsubscribe_html: string;
   plain_text_mode: boolean;
   unsubscribe_text: string;
+  send_window_enabled: boolean;
+  send_window_start: number;
+  send_window_end: number;
+  send_days: number[];
+  send_timezone: string;
+  max_bounce_rate: number;
+  min_sends_before_pause: number;
 };
 
 /* ------------------------------------------------------------ row -> app ---- */
@@ -124,6 +131,13 @@ export const toSettings = (r: SettingsRow): Settings => ({
   unsubscribeHtml: r.unsubscribe_html ?? "",
   plainTextMode: r.plain_text_mode ?? true,
   unsubscribeText: r.unsubscribe_text ?? "",
+  sendWindowEnabled: r.send_window_enabled ?? true,
+  sendWindowStart: r.send_window_start ?? 8,
+  sendWindowEnd: r.send_window_end ?? 18,
+  sendDays: r.send_days ?? [1, 2, 3, 4, 5],
+  sendTimezone: r.send_timezone ?? "Europe/London",
+  maxBounceRate: Number(r.max_bounce_rate ?? 2),
+  minSendsBeforePause: r.min_sends_before_pause ?? 20,
 });
 
 /* ------------------------------------------------------------ app -> row ---- */
@@ -188,6 +202,13 @@ export const fromSettings = (s: Settings, userId: string): SettingsRow => ({
   unsubscribe_html: s.unsubscribeHtml ?? "",
   plain_text_mode: s.plainTextMode,
   unsubscribe_text: s.unsubscribeText,
+  send_window_enabled: s.sendWindowEnabled,
+  send_window_start: s.sendWindowStart,
+  send_window_end: s.sendWindowEnd,
+  send_days: s.sendDays,
+  send_timezone: s.sendTimezone,
+  max_bounce_rate: s.maxBounceRate,
+  min_sends_before_pause: s.minSendsBeforePause,
 });
 
 // Partial patches need column-by-column translation so `update()` only touches

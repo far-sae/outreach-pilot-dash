@@ -11,6 +11,7 @@ import type { ProspectRow, SettingsRow, TemplateRow } from "@/lib/db-types";
 import type { Options as MailOptions } from "nodemailer/lib/mailer";
 
 import { buildHtmlBody, buildTextBody, mergeCopy, type BodyOptions } from "@/lib/merge";
+import { describeSendWindow, isWithinSendWindow } from "@/lib/send-window";
 import {
   remainingToday,
   sendableMailboxes,
@@ -18,6 +19,7 @@ import {
   type MailboxRow,
   type MailboxStatusRow,
   type QueueRow,
+  type SequenceStepRow,
 } from "@/server/mailbox-rows";
 
 export type DrainResult = {
@@ -78,6 +80,19 @@ export async function drainQueue(
     return { ...out, errors: out.errors, blocked: "No mailboxes connected. Add one in Settings." };
   }
 
+  // Checked before any mailbox is touched: outside working hours nothing should
+  // go out, and the queue simply waits.
+  const window = {
+    enabled: settings?.sendWindowEnabled ?? true,
+    startHour: settings?.sendWindowStart ?? 8,
+    endHour: settings?.sendWindowEnd ?? 18,
+    days: settings?.sendDays ?? [1, 2, 3, 4, 5],
+    timezone: settings?.sendTimezone ?? "Europe/London",
+  };
+  if (!isWithinSendWindow(window)) {
+    return { ...out, blocked: describeSendWindow(window) };
+  }
+
   const usable = sendableMailboxes(mailboxes);
   if (usable.length === 0) {
     const paused = mailboxes.filter((m) => m.pausedReason).length;
@@ -123,7 +138,9 @@ export async function drainQueue(
     const templateIds = [...new Set(items.map((i) => i.template_id))];
     const emails = [...new Set(items.map((i) => i.to_email.toLowerCase()))];
 
-    const [prospectsRes, templatesRes, suppressedRes] = await Promise.all([
+    const sequenceIds = [...new Set(items.map((i) => i.sequence_id).filter(Boolean))] as string[];
+
+    const [prospectsRes, templatesRes, suppressedRes, stepsRes] = await Promise.all([
       client.from("prospects").select("*").in("id", prospectIds).returns<ProspectRow[]>(),
       client.from("templates").select("*").in("id", templateIds).returns<TemplateRow[]>(),
       client
@@ -132,11 +149,30 @@ export async function drainQueue(
         .eq("user_id", userId)
         .in("email", emails)
         .returns<{ email: string }[]>(),
+      sequenceIds.length
+        ? client
+            .from("sequence_steps")
+            .select("*")
+            .in("sequence_id", sequenceIds)
+            .order("position")
+            .returns<SequenceStepRow[]>()
+        : Promise.resolve({ data: [] as SequenceStepRow[] }),
     ]);
 
     const prospects = new Map((prospectsRes.data ?? []).map((r) => [r.id, toProspect(r)]));
     const templates = new Map((templatesRes.data ?? []).map((r) => [r.id, toTemplate(r)]));
     const suppressed = new Set((suppressedRes.data ?? []).map((s) => s.email.toLowerCase()));
+
+    // Steps grouped by sequence, so a completed send can look up what follows.
+    const stepsBySequence = new Map<string, SequenceStepRow[]>();
+    for (const step of stepsRes.data ?? []) {
+      const list = stepsBySequence.get(step.sequence_id);
+      if (list) list.push(step);
+      else stepsBySequence.set(step.sequence_id, [step]);
+    }
+
+    // Follow-ups queued after this batch, in one insert.
+    const followUps: Record<string, unknown>[] = [];
 
     const transport = createTransport({
       host: row.smtp_host,
@@ -179,6 +215,27 @@ export async function drainQueue(
         }
         if (!template) {
           await skip("Template no longer exists");
+          out.skipped += 1;
+          continue;
+        }
+
+        // A domain that cannot receive mail produces a hard bounce, and bounce
+        // rate is what gets a sender throttled. Cheaper to check than to send.
+        const { domainAcceptsMail, domainOfEmail } = await import("@/server/verify-address");
+        if (!(await domainAcceptsMail(domainOfEmail(prospect.email)))) {
+          await skip("Domain does not accept mail");
+          await client
+            .from("suppressions")
+            .insert({
+              user_id: userId,
+              email: prospect.email.toLowerCase(),
+              reason: "hard_bounce",
+              detail: "No MX or A record for the domain",
+            })
+            .then(
+              () => undefined,
+              () => undefined,
+            );
           out.skipped += 1;
           continue;
         }
@@ -236,6 +293,7 @@ export async function drainQueue(
               account_id: mailbox.id,
               campaign_id: item.campaign_id,
               prospect_id: item.prospect_id,
+              step_position: item.step_position,
               to_email: prospect.email,
               subject,
               status: "sent",
@@ -256,6 +314,29 @@ export async function drainQueue(
           out.sent += 1;
           budget -= 1;
           failuresThisPass = 0;
+
+          // Queue the next step of the sequence, if there is one. Scheduling it
+          // here rather than up front means a follow-up only exists once the
+          // message before it actually went out.
+          if (item.sequence_id) {
+            const steps = stepsBySequence.get(item.sequence_id) ?? [];
+            const next = steps.find((s) => s.position === item.step_position + 1);
+            if (next?.template_id) {
+              followUps.push({
+                user_id: userId,
+                campaign_id: item.campaign_id,
+                prospect_id: item.prospect_id,
+                template_id: next.template_id,
+                to_email: prospect.email,
+                sequence_id: item.sequence_id,
+                step_id: next.id,
+                step_position: next.position,
+                scheduled_at: new Date(
+                  Date.now() + Math.max(0, next.delay_days) * 86_400_000,
+                ).toISOString(),
+              });
+            }
+          }
         } catch (err) {
           const message = friendlySmtpError(err, row.smtp_host);
           const permanent = isPermanentSmtpError(err);
@@ -284,6 +365,7 @@ export async function drainQueue(
             account_id: mailbox.id,
             campaign_id: item.campaign_id,
             prospect_id: item.prospect_id,
+            step_position: item.step_position,
             to_email: item.to_email,
             subject,
             status: "failed",
@@ -323,6 +405,35 @@ export async function drainQueue(
       }
     } finally {
       transport.close();
+    }
+
+    // Follow-ups in one insert. ignoreDuplicates so a retry of this batch
+    // cannot queue the same step twice.
+    if (followUps.length) {
+      const { error } = await client.from("send_queue").upsert(followUps, {
+        onConflict: "campaign_id,prospect_id,step_position",
+        ignoreDuplicates: true,
+      });
+      if (error) console.error("could not queue follow-ups:", error.message);
+    }
+
+    // Bounce circuit breaker. Above the threshold a mailbox is damaging its own
+    // reputation with every further send, so it pauses itself rather than
+    // waiting for someone to notice.
+    if (mailbox.sentToday >= (settings?.minSendsBeforePause ?? 20)) {
+      const { data: rate } = await client.rpc("mailbox_bounce_rate", { p_account: mailbox.id });
+      const limit = settings?.maxBounceRate ?? 2;
+      if (typeof rate === "number" && rate > limit) {
+        await client
+          .from("email_accounts")
+          .update({
+            paused_reason:
+              `Paused automatically: ${rate}% of today's sends bounced, above the ` +
+              `${limit}% limit. Clean the list before resuming.`,
+          })
+          .eq("id", mailbox.id);
+        noteError(row.from_email, `paused — bounce rate ${rate}% exceeds ${limit}%`);
+      }
     }
 
     // File the batch into Sent. Failing here must never fail the send — the

@@ -56,6 +56,31 @@ export type MailboxInput = {
   isActive: boolean;
 };
 
+/** One message in a follow-up sequence. */
+export type SequenceStep = {
+  id: string;
+  position: number;
+  templateId: string | null;
+  /** Days after the previous step. Ignored for position 0. */
+  delayDays: number;
+};
+
+export type Sequence = {
+  id: string;
+  name: string;
+  /** Cancels later steps once the prospect replies. */
+  stopOnReply: boolean;
+  steps: SequenceStep[];
+};
+
+export type TemplateStats = {
+  templateId: string;
+  templateName: string;
+  sent: number;
+  replied: number;
+  replyRate: number;
+};
+
 export type QueueStats = {
   queued: number;
   sending: number;

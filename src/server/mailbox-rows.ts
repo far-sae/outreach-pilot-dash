@@ -53,6 +53,18 @@ export type QueueRow = {
   max_attempts: number;
   account_id: string | null;
   error: string | null;
+  sequence_id: string | null;
+  step_id: string | null;
+  step_position: number;
+};
+
+export type SequenceStepRow = {
+  id: string;
+  sequence_id: string;
+  user_id: string;
+  position: number;
+  template_id: string | null;
+  delay_days: number;
 };
 
 export function toMailbox(r: MailboxRow, status?: MailboxStatusRow): Mailbox {
@@ -91,9 +103,41 @@ export function remainingToday(m: { effectiveLimit: number; sentToday: number })
   return Math.max(0, m.effectiveLimit - m.sentToday);
 }
 
-/** Mailboxes that may send right now, most idle first so rotation stays even. */
+export const domainOf = (email: string) => email.split("@")[1]?.toLowerCase() ?? "";
+
+/**
+ * Mailboxes that may send right now, interleaved across domains.
+ *
+ * Reputation is tracked per domain, not per mailbox, so draining three
+ * mailboxes on one domain before touching the next concentrates the day's
+ * volume onto a single reputation. Round-robin over domains spreads it, and
+ * within each domain the most idle mailbox goes first so usage stays even.
+ */
 export function sendableMailboxes<T extends Mailbox>(all: T[]): T[] {
-  return all
+  const usable = all
     .filter((m) => m.isActive && !m.pausedReason && m.hasPassword && remainingToday(m) > 0)
     .sort((a, b) => remainingToday(b) - remainingToday(a));
+
+  const byDomain = new Map<string, T[]>();
+  for (const m of usable) {
+    const domain = domainOf(m.fromEmail);
+    const list = byDomain.get(domain);
+    if (list) list.push(m);
+    else byDomain.set(domain, [m]);
+  }
+
+  // Domains with the most headroom lead, then one mailbox from each in turn.
+  const groups = [...byDomain.values()].sort(
+    (a, b) =>
+      b.reduce((n, m) => n + remainingToday(m), 0) - a.reduce((n, m) => n + remainingToday(m), 0),
+  );
+
+  const out: T[] = [];
+  for (let i = 0; out.length < usable.length; i += 1) {
+    for (const group of groups) {
+      const next = group[i];
+      if (next) out.push(next);
+    }
+  }
+  return out;
 }

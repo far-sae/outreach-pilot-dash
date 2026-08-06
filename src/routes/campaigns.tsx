@@ -9,10 +9,11 @@ import {
   enqueueCampaign,
   getCampaignProgress,
   listMailboxes,
+  listSequences,
   processQueue,
   type CampaignProgress,
 } from "@/server/email.functions";
-import type { PoolSummary } from "@/lib/email-types";
+import type { PoolSummary, Sequence } from "@/lib/email-types";
 import { AppLayout } from "@/components/app-layout";
 import {
   Btn,
@@ -70,6 +71,10 @@ function CampaignsPage() {
   const search = Route.useSearch();
   const enqueue = useServerFn(enqueueCampaign);
   const drain = useServerFn(processQueue);
+  const loadSequences = useServerFn(listSequences);
+  const [sequences, setSequences] = useState<Sequence[]>([]);
+  /** Empty means a single email from the selected template. */
+  const [sequenceId, setSequenceId] = useState("");
   const loadPool = useServerFn(listMailboxes);
   const loadProgress = useServerFn(getCampaignProgress);
 
@@ -79,16 +84,18 @@ function CampaignsPage() {
 
   const refreshStatus = useCallback(async () => {
     try {
-      const [poolRes, prog] = await Promise.all([
+      const [poolRes, prog, seqs] = await Promise.all([
         loadPool({ data: undefined }),
         loadProgress({ data: undefined }),
+        loadSequences({ data: undefined }),
       ]);
       setPool(poolRes.summary);
       setProgressById(new Map(prog.map((p) => [p.campaignId, p])));
+      setSequences(seqs);
     } catch {
       /* the page still works without live counts */
     }
-  }, [loadPool, loadProgress]);
+  }, [loadPool, loadProgress, loadSequences]);
 
   useEffect(() => {
     void refreshStatus();
@@ -130,6 +137,13 @@ function CampaignsPage() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [report, setReport] = useState<SendReport | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Campaign history filters.
+  const [historyGroup, setHistoryGroup] = useState("all");
+  const [historyDays, setHistoryDays] = useState<"7" | "30" | "90" | "all">("all");
+  const [historyStatus, setHistoryStatus] = useState<"all" | "sending" | "failed" | "done">("all");
+  const [historySort, setHistorySort] = useState<"newest" | "oldest" | "name" | "size">("newest");
+  const [historyQuery, setHistoryQuery] = useState("");
 
   const members = useMemo(
     () => prospects.filter((p) => (groupId ? p.groupId === groupId : p.groupId === null)),
@@ -176,6 +190,7 @@ function CampaignsPage() {
           campaignId: campaign.id,
           templateId: template.id,
           prospectIds: list.map((p) => p.id),
+          ...(sequenceId ? { sequenceId } : {}),
         },
       });
 
@@ -251,7 +266,42 @@ function CampaignsPage() {
     }
   }
 
-  const history = [...campaigns].sort((a, b) => b.sentAt.localeCompare(a.sentAt));
+  const history = useMemo(() => {
+    const cutoff = historyDays === "all" ? 0 : Date.now() - Number(historyDays) * 86_400_000;
+
+    return [...campaigns]
+      .filter((c) => {
+        if (historyGroup !== "all" && (c.groupId ?? "none") !== historyGroup) return false;
+        if (cutoff && new Date(c.sentAt).getTime() < cutoff) return false;
+        if (historyQuery && !c.name.toLowerCase().includes(historyQuery.toLowerCase()))
+          return false;
+        if (historyStatus !== "all") {
+          const p = progressById.get(c.id);
+          const queued = p?.queued ?? 0;
+          const failed = p?.failed ?? 0;
+          if (historyStatus === "sending" && queued === 0) return false;
+          if (historyStatus === "failed" && failed === 0) return false;
+          if (historyStatus === "done" && (queued > 0 || failed > 0)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (historySort === "oldest") return a.sentAt.localeCompare(b.sentAt);
+        if (historySort === "name") return a.name.localeCompare(b.name);
+        if (historySort === "size") {
+          return (progressById.get(b.id)?.sent ?? 0) - (progressById.get(a.id)?.sent ?? 0);
+        }
+        return b.sentAt.localeCompare(a.sentAt);
+      });
+  }, [
+    campaigns,
+    historyGroup,
+    historyDays,
+    historyQuery,
+    historyStatus,
+    historySort,
+    progressById,
+  ]);
 
   return (
     <AppLayout>
@@ -362,6 +412,24 @@ function CampaignsPage() {
                 </p>
               )}
             </div>
+
+            <Field
+              label="Follow-up sequence"
+              hint="A sequence sends several messages over days and stops when they reply."
+            >
+              <select
+                className={inputClass}
+                value={sequenceId}
+                onChange={(e) => setSequenceId(e.target.value)}
+              >
+                <option value="">Single email (use the template below)</option>
+                {sequences.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {s.steps.length} step{s.steps.length === 1 ? "" : "s"}
+                  </option>
+                ))}
+              </select>
+            </Field>
 
             <Field label="Template">
               {templates.length ? (
@@ -486,6 +554,76 @@ function CampaignsPage() {
 
       <div className="mt-6">
         <Panel title="Campaign history">
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <input
+              className={inputClass}
+              placeholder="Search by name…"
+              value={historyQuery}
+              onChange={(e) => setHistoryQuery(e.target.value)}
+            />
+            <select
+              className={inputClass}
+              value={historyGroup}
+              onChange={(e) => setHistoryGroup(e.target.value)}
+            >
+              <option value="all">All groups</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+              <option value="none">Unassigned</option>
+            </select>
+            <select
+              className={inputClass}
+              value={historyDays}
+              onChange={(e) => setHistoryDays(e.target.value as typeof historyDays)}
+            >
+              <option value="all">Any date</option>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <select
+              className={inputClass}
+              value={historyStatus}
+              onChange={(e) => setHistoryStatus(e.target.value as typeof historyStatus)}
+            >
+              <option value="all">Any status</option>
+              <option value="sending">Still sending</option>
+              <option value="failed">Has failures</option>
+              <option value="done">Complete</option>
+            </select>
+            <select
+              className={inputClass}
+              value={historySort}
+              onChange={(e) => setHistorySort(e.target.value as typeof historySort)}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name">Name A–Z</option>
+              <option value="size">Most sent</option>
+            </select>
+          </div>
+
+          {history.length !== campaigns.length && (
+            <p className="mb-3 text-xs text-muted-foreground">
+              Showing {history.length} of {campaigns.length} campaigns.{" "}
+              <button
+                type="button"
+                className="text-accent-blue hover:underline"
+                onClick={() => {
+                  setHistoryQuery("");
+                  setHistoryGroup("all");
+                  setHistoryDays("all");
+                  setHistoryStatus("all");
+                }}
+              >
+                Clear filters
+              </button>
+            </p>
+          )}
+
           {history.length === 0 ? (
             <EmptyState
               title="No campaigns sent yet"

@@ -113,6 +113,129 @@ function SettingsPage() {
           </div>
         </Panel>
 
+        <Panel title="Sending schedule">
+          <p className="-mt-1 text-xs text-muted-foreground">
+            Mail arriving at 03:00 reads as automated. Restricting sends to working hours costs
+            nothing and is one of the few content-independent signals you control.
+          </p>
+
+          <label className="mt-5 flex items-start gap-2.5">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={form.sendWindowEnabled}
+              onChange={(e) => setForm({ ...form, sendWindowEnabled: e.target.checked })}
+            />
+            <span className="text-sm font-medium">Only send during working hours</span>
+          </label>
+
+          {form.sendWindowEnabled && (
+            <>
+              <div className="mt-4 grid gap-5 sm:grid-cols-3">
+                <Field label="From (hour)">
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    className={inputClass}
+                    value={form.sendWindowStart}
+                    onChange={(e) => setForm({ ...form, sendWindowStart: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label="Until (hour)">
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    className={inputClass}
+                    value={form.sendWindowEnd}
+                    onChange={(e) => setForm({ ...form, sendWindowEnd: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label="Timezone" hint="IANA name.">
+                  <input
+                    className={inputClass}
+                    value={form.sendTimezone}
+                    placeholder="Europe/London"
+                    onChange={(e) => setForm({ ...form, sendTimezone: e.target.value })}
+                  />
+                </Field>
+              </div>
+
+              <div className="mt-4">
+                <span className="text-xs font-medium text-muted-foreground">Sending days</span>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {[
+                    [1, "Mon"],
+                    [2, "Tue"],
+                    [3, "Wed"],
+                    [4, "Thu"],
+                    [5, "Fri"],
+                    [6, "Sat"],
+                    [7, "Sun"],
+                  ].map(([day, label]) => {
+                    const on = form.sendDays.includes(day as number);
+                    return (
+                      <button
+                        key={label as string}
+                        type="button"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            sendDays: on
+                              ? form.sendDays.filter((d) => d !== day)
+                              : [...form.sendDays, day as number].sort(),
+                          })
+                        }
+                        className={cn(
+                          "rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
+                          on
+                            ? "border-accent-blue bg-accent-tint text-accent-blue"
+                            : "border-border text-muted-foreground hover:bg-surface-muted",
+                        )}
+                      >
+                        {label as string}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="mt-6 border-t border-border pt-5">
+            <p className="text-sm font-medium">Bounce protection</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Above roughly 2% hard bounces, providers start throttling. A mailbox that crosses this
+              pauses itself rather than carrying on damaging its own reputation.
+            </p>
+            <div className="mt-4 grid gap-5 sm:grid-cols-2">
+              <Field label="Max bounce rate (%)">
+                <input
+                  type="number"
+                  min={0.5}
+                  max={50}
+                  step={0.5}
+                  className={inputClass}
+                  value={form.maxBounceRate}
+                  onChange={(e) => setForm({ ...form, maxBounceRate: Number(e.target.value) })}
+                />
+              </Field>
+              <Field label="Minimum sends first" hint="Before the rate is acted on.">
+                <input
+                  type="number"
+                  min={1}
+                  className={inputClass}
+                  value={form.minSendsBeforePause}
+                  onChange={(e) =>
+                    setForm({ ...form, minSendsBeforePause: Number(e.target.value) })
+                  }
+                />
+              </Field>
+            </div>
+          </div>
+        </Panel>
+
         <DeliverabilityCheck />
 
         <Panel title="Deliverability">

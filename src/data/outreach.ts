@@ -56,6 +56,19 @@ export type Settings = {
   plainTextMode: boolean;
   /** Footer wording; may contain {{unsubscribe}}. */
   unsubscribeText: string;
+  /** Restrict sending to working hours — mail at 03:00 reads as automated. */
+  sendWindowEnabled: boolean;
+  /** Hours, 0–23, in `sendTimezone`. */
+  sendWindowStart: number;
+  sendWindowEnd: number;
+  /** ISO weekdays permitted, 1 = Monday. */
+  sendDays: number[];
+  /** IANA zone the window is evaluated in. */
+  sendTimezone: string;
+  /** Percentage of hard bounces that pauses a mailbox automatically. */
+  maxBounceRate: number;
+  /** Sends required before the bounce rate is trusted enough to act on. */
+  minSendsBeforePause: number;
 };
 
 export type OutreachState = {
@@ -273,5 +286,12 @@ export const seedState: OutreachState = {
     unsubscribeHtml: "",
     plainTextMode: true,
     unsubscribeText: "If you would rather not hear from me, unsubscribe here: {{unsubscribe}}",
+    sendWindowEnabled: true,
+    sendWindowStart: 8,
+    sendWindowEnd: 18,
+    sendDays: [1, 2, 3, 4, 5],
+    sendTimezone: "Europe/London",
+    maxBounceRate: 2.0,
+    minSendsBeforePause: 20,
   },
 };

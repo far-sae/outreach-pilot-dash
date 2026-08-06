@@ -13,6 +13,8 @@ import {
   inputClass,
 } from "@/components/ui-kit";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { SequencesPanel } from "@/components/sequences-panel";
+import { TemplateStatsPanel } from "@/components/template-stats-panel";
 import { htmlToText, textToHtml } from "@/lib/merge";
 import { cn } from "@/lib/utils";
 import { mergeCopy, useOutreach } from "@/store/outreach-store";
@@ -270,6 +272,11 @@ function TemplatesPage() {
           )}
         </div>
       )}
+
+      <div className="mt-6 grid gap-6">
+        <TemplateStatsPanel />
+        <SequencesPanel templates={templates} />
+      </div>
 
       <ConfirmDialog
         open={confirm !== null}

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import { toProspect, toSettings, type ProspectRow, type SettingsRow } from "@/lib/db-types";
+import { makeId } from "@/data/outreach";
 import type {
   EnqueueResult,
   Mailbox,
@@ -8,6 +9,9 @@ import type {
   PoolSummary,
   QueueStats,
   ReplyCheckResult,
+  Sequence,
+  SequenceStep,
+  TemplateStats,
 } from "@/lib/email-types";
 import { buildHtmlBody, buildTextBody } from "@/lib/merge";
 import { requireUser } from "@/server/auth";
@@ -17,6 +21,7 @@ import {
   toMailbox,
   type MailboxRow,
   type MailboxStatusRow,
+  type SequenceStepRow,
 } from "@/server/mailbox-rows";
 
 type Client = Awaited<ReturnType<typeof requireUser>>["client"];
@@ -90,6 +95,19 @@ const MIGRATION_PROBES: { file: string; table: string; column: string }[] = [
   { file: "supabase/migrations/004_sending_pool.sql", table: "send_queue", column: "id" },
   { file: "supabase/migrations/004_sending_pool.sql", table: "suppressions", column: "id" },
   { file: "supabase/migrations/004_sending_pool.sql", table: "mailbox_status", column: "id" },
+  {
+    file: "supabase/migrations/005_editor_deliverability.sql",
+    table: "templates",
+    column: "body_html",
+  },
+  {
+    file: "supabase/migrations/006_unsubscribe_delete.sql",
+    table: "settings",
+    column: "signature_html",
+  },
+  { file: "supabase/migrations/007_sequences.sql", table: "sequences", column: "id" },
+  { file: "supabase/migrations/007_sequences.sql", table: "send_queue", column: "step_position" },
+  { file: "supabase/migrations/007_sequences.sql", table: "settings", column: "send_window_start" },
 ];
 
 export type SchemaStatus = { ok: boolean; missing: string | null; detail: string | null };
@@ -324,19 +342,179 @@ export const sendTestEmail = createServerFn({ method: "POST" })
     }
   });
 
+/* ------------------------------------------------------------- sequences ---- */
+
+type SequenceRow = { id: string; user_id: string; name: string; stop_on_reply: boolean };
+
+export const listSequences = createServerFn({ method: "POST" }).handler(
+  async (): Promise<Sequence[]> => {
+    const { client, user } = await requireUser();
+
+    const [seqs, steps] = await Promise.all([
+      client
+        .from("sequences")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("name")
+        .returns<SequenceRow[]>(),
+      client
+        .from("sequence_steps")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("position")
+        .returns<SequenceStepRow[]>(),
+    ]);
+    if (seqs.error) throw new Error(seqs.error.message);
+
+    const byId = new Map<string, SequenceStep[]>();
+    for (const s of steps.data ?? []) {
+      const step: SequenceStep = {
+        id: s.id,
+        position: s.position,
+        templateId: s.template_id,
+        delayDays: s.delay_days,
+      };
+      const list = byId.get(s.sequence_id);
+      if (list) list.push(step);
+      else byId.set(s.sequence_id, [step]);
+    }
+
+    return (seqs.data ?? []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      stopOnReply: r.stop_on_reply,
+      steps: byId.get(r.id) ?? [],
+    }));
+  },
+);
+
+/** Creates or replaces a sequence and all of its steps in one call. */
+export const saveSequence = createServerFn({ method: "POST" })
+  .validator((d: Sequence) => {
+    if (!d?.name?.trim()) throw new Error("Name the sequence");
+    if (!Array.isArray(d.steps) || d.steps.length === 0) {
+      throw new Error("A sequence needs at least one step");
+    }
+    if (d.steps.length > 10) throw new Error("Ten steps is the maximum");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const { client, user } = await requireUser();
+    const id = data.id || makeId("seq");
+
+    const { error } = await client.from("sequences").upsert({
+      id,
+      user_id: user.id,
+      name: data.name.trim(),
+      stop_on_reply: data.stopOnReply,
+    });
+    if (error) throw new Error(error.message);
+
+    // Replaced wholesale: reordering steps otherwise needs position-shuffling
+    // logic that is easy to get subtly wrong.
+    await client.from("sequence_steps").delete().eq("sequence_id", id).eq("user_id", user.id);
+
+    const rows = data.steps.map((s, i) => ({
+      id: s.id || makeId("stp"),
+      sequence_id: id,
+      user_id: user.id,
+      position: i,
+      template_id: s.templateId,
+      // The first message goes out immediately; a delay there would be ignored.
+      delay_days: i === 0 ? 0 : Math.max(1, s.delayDays),
+    }));
+
+    const { error: stepError } = await client.from("sequence_steps").insert(rows);
+    if (stepError) throw new Error(stepError.message);
+
+    return { id };
+  });
+
+export const deleteSequence = createServerFn({ method: "POST" })
+  .validator((d: { id: string }) => {
+    if (!d?.id) throw new Error("Missing sequence id");
+    return d;
+  })
+  .handler(async ({ data }) => {
+    const { client, user } = await requireUser();
+    const { error } = await client
+      .from("sequences")
+      .delete()
+      .eq("id", data.id)
+      .eq("user_id", user.id);
+    if (error) throw new Error(error.message);
+    return { ok: true as const };
+  });
+
+/* --------------------------------------------------------------- analytics -- */
+
+export const getTemplateStats = createServerFn({ method: "POST" }).handler(
+  async (): Promise<TemplateStats[]> => {
+    const { client, user } = await requireUser();
+    const { data, error } = await client
+      .from("template_performance")
+      .select("*")
+      .eq("user_id", user.id)
+      .returns<
+        {
+          template_id: string;
+          template_name: string;
+          sent: number;
+          replied: number;
+          reply_rate: number;
+        }[]
+      >();
+    if (error) throw new Error(error.message);
+
+    return (data ?? [])
+      .map((r) => ({
+        templateId: r.template_id,
+        templateName: r.template_name,
+        sent: r.sent,
+        replied: r.replied,
+        replyRate: Number(r.reply_rate),
+      }))
+      .sort((a, b) => b.sent - a.sent);
+  },
+);
+
 /* ----------------------------------------------------------------- queue ---- */
 
 export const enqueueCampaign = createServerFn({ method: "POST" })
-  .validator((d: { campaignId: string; templateId: string; prospectIds: string[] }) => {
-    if (!d?.campaignId || !d?.templateId) throw new Error("Missing campaign or template");
-    if (!Array.isArray(d.prospectIds) || d.prospectIds.length === 0) {
-      throw new Error("No recipients supplied");
-    }
-    if (d.prospectIds.length > 100_000) throw new Error("Too many recipients in one campaign");
-    return d;
-  })
+  .validator(
+    (d: {
+      campaignId: string;
+      templateId: string;
+      prospectIds: string[];
+      sequenceId?: string | undefined;
+    }) => {
+      if (!d?.campaignId || !d?.templateId) throw new Error("Missing campaign or template");
+      if (!Array.isArray(d.prospectIds) || d.prospectIds.length === 0) {
+        throw new Error("No recipients supplied");
+      }
+      if (d.prospectIds.length > 100_000) throw new Error("Too many recipients in one campaign");
+      return d;
+    },
+  )
   .handler(async ({ data }): Promise<EnqueueResult> => {
     const { client, user } = await requireUser();
+
+    // Only the first step is queued now. Each later step is scheduled by the
+    // engine once the message before it has actually gone out, so a sequence
+    // never runs ahead of itself.
+    let firstTemplateId = data.templateId;
+    if (data.sequenceId) {
+      const { data: steps } = await client
+        .from("sequence_steps")
+        .select("*")
+        .eq("sequence_id", data.sequenceId)
+        .order("position")
+        .limit(1)
+        .returns<SequenceStepRow[]>();
+      const first = steps?.[0];
+      if (!first?.template_id) throw new Error("That sequence has no usable first step.");
+      firstTemplateId = first.template_id;
+    }
 
     const { data: prospectRows, error } = await client
       .from("prospects")
@@ -369,8 +547,10 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
         user_id: user.id,
         campaign_id: data.campaignId,
         prospect_id: p.id,
-        template_id: data.templateId,
+        template_id: firstTemplateId,
         to_email: p.email,
+        sequence_id: data.sequenceId ?? null,
+        step_position: 0,
       }));
 
     let queued = 0;
@@ -379,7 +559,10 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
       const chunk = rows.slice(i, i + 500);
       const { data: inserted, error: insertError } = await client
         .from("send_queue")
-        .upsert(chunk, { onConflict: "campaign_id,prospect_id", ignoreDuplicates: true })
+        .upsert(chunk, {
+          onConflict: "campaign_id,prospect_id,step_position",
+          ignoreDuplicates: true,
+        })
         .select("id");
       if (insertError) throw new Error(insertError.message);
       queued += inserted?.length ?? 0;
