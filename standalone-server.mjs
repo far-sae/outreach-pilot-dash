@@ -6,7 +6,10 @@
  * a Node HTTP server so the app can be deployed to Railway, Fly, Render, a
  * Docker host, or a plain VPS without any platform-specific adapter.
  *
- * Run with:  node server.mjs      (PORT and HOST are read from the environment)
+ * Run with:  node standalone-server.mjs   (PORT and HOST are read from the environment)
+ *
+ * Named "standalone" rather than "server" because Nitro — used only for the
+ * Vercel deployment path — treats a root-level server.mjs as its own entry.
  */
 
 import { createServer } from "node:http";

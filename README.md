@@ -111,16 +111,21 @@ links are built from `APP_URL`, and a `localhost` link works for nobody but you.
 
 ```sh
 npm run build    # emits dist/client (static) and dist/server (SSR handler)
-npm start        # node server.mjs — serves both on PORT (default 3000)
+npm start        # node standalone-server.mjs — serves both on PORT (default 3000)
 ```
 
-[server.mjs](server.mjs) is a plain Node HTTP server wrapping the SSR fetch
-handler and serving `dist/client`. There is no platform adapter, so the same
-build runs on Railway, Fly, Render, Docker, or a bare VPS.
+[standalone-server.mjs](standalone-server.mjs) is a plain Node HTTP server
+wrapping the SSR fetch handler and serving `dist/client`. There is no platform
+adapter, so the same build runs on Railway, Fly, Render, Docker, or a bare VPS.
 
 A [Dockerfile](Dockerfile) is included. Deploy it **twice** — once as the web
-service (`node server.mjs`) and once as the worker (`npm run worker`). They share
-an image and a database; only the command differs.
+service (`node standalone-server.mjs`) and once as the worker (`npm run worker`).
+They share an image and a database; only the command differs.
+
+**Vercel** is also supported: when the `VERCEL` env var is present,
+[vite.config.ts](vite.config.ts) adds the Nitro plugin, which compiles the SSR
+handler into Vercel Functions. Note that Vercel cannot host the long-running
+send worker — run it elsewhere (see below).
 
 ### Environment
 

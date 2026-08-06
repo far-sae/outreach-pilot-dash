@@ -32,7 +32,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=build /app/dist ./dist
-COPY server.mjs ./
+COPY standalone-server.mjs ./
 COPY tsconfig.json ./
 COPY worker ./worker
 COPY src ./src
@@ -43,4 +43,4 @@ USER node
 EXPOSE 3000
 ENV PORT=3000 HOST=0.0.0.0
 
-CMD ["node", "server.mjs"]
+CMD ["node", "standalone-server.mjs"]
