@@ -119,8 +119,10 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-// Reached by email recipients, who have no account. Everything else is gated.
-const PUBLIC_PREFIXES = ["/u/"];
+// Reached from emailed links, so they can't sit behind the sign-in gate:
+// /u/ by recipients with no account, /reset-password by a user holding a
+// recovery session who must see the form (or an expiry notice), not the app.
+const PUBLIC_PREFIXES = ["/u/", "/reset-password"];
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();

@@ -78,13 +78,19 @@ function friendlyAuthError(message: string): string {
 }
 
 function SignInScreen() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const { signIn, signUp, resetPassword } = useAuth();
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  function switchMode(next: "signin" | "signup" | "forgot") {
+    setMode(next);
+    setError(null);
+    setNotice(null);
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -95,10 +101,16 @@ function SignInScreen() {
     if (mode === "signin") {
       const { error: err } = await signIn(email, password);
       if (err) setError(friendlyAuthError(err));
-    } else {
+    } else if (mode === "signup") {
       const { error: err, needsEmail } = await signUp(email, password);
       if (err) setError(friendlyAuthError(err));
       else if (needsEmail) setNotice("Check your inbox for a confirmation link, then sign in.");
+    } else {
+      const { error: err } = await resetPassword(email);
+      if (err) setError(friendlyAuthError(err));
+      // Same wording either way, so the form can't be used to probe which
+      // emails have an account.
+      else setNotice("If an account exists for that email, a reset link is on its way.");
     }
 
     setBusy(false);
@@ -109,7 +121,11 @@ function SignInScreen() {
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Outreach Console</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {mode === "signin" ? "Sign in to your account." : "Create an account to get started."}
+          {mode === "signin"
+            ? "Sign in to your account."
+            : mode === "signup"
+              ? "Create an account to get started."
+              : "Enter your email and we'll send you a reset link."}
         </p>
 
         <form onSubmit={onSubmit} className="mt-8 space-y-4">
@@ -126,25 +142,44 @@ function SignInScreen() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
-            />
-          </div>
+          {mode !== "forgot" ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="password">Password</Label>
+                {mode === "signin" ? (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() => switchMode("forgot")}
+                  >
+                    Forgot password?
+                  </button>
+                ) : null}
+              </div>
+              <Input
+                id="password"
+                type="password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 6 characters"
+              />
+            </div>
+          ) : null}
 
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           {notice ? <p className="text-sm text-foreground">{notice}</p> : null}
 
           <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? "Working…" : mode === "signin" ? "Sign in" : "Create account"}
+            {busy
+              ? "Working…"
+              : mode === "signin"
+                ? "Sign in"
+                : mode === "signup"
+                  ? "Create account"
+                  : "Send reset link"}
           </Button>
         </form>
 
@@ -153,11 +188,7 @@ function SignInScreen() {
           <button
             type="button"
             className="font-medium text-primary hover:underline"
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setError(null);
-              setNotice(null);
-            }}
+            onClick={() => switchMode(mode === "signin" ? "signup" : "signin")}
           >
             {mode === "signin" ? "Create one" : "Sign in"}
           </button>

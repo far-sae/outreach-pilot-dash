@@ -16,7 +16,7 @@ export default defineConfig({
     }),
     // On Vercel, Nitro compiles the SSR handler into Vercel Functions.
     // Everywhere else the plain build + standalone-server.mjs path stays as-is.
-    ...(process.env.VERCEL ? [nitro()] : []),
+    ...(process.env["VERCEL"] ? [nitro()] : []),
     // Must come after tanstackStart.
     viteReact(),
   ],

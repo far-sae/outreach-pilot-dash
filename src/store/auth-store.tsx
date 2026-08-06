@@ -14,6 +14,10 @@ type AuthCtx = {
     password: string,
   ) => Promise<{ error: string | null; needsEmail: boolean }>;
   signOut: () => Promise<void>;
+  /** Emails a recovery link that lands on /reset-password. */
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
+  /** Sets a new password for the current session (normal or recovery). */
+  updatePassword: (password: string) => Promise<{ error: string | null }>;
 };
 
 const AuthContext = createContext<AuthCtx | null>(null);
@@ -73,6 +77,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => {
         await supabase.auth.signOut();
+      },
+      resetPassword: async (email) => {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          // The clicked link carries a recovery session in the URL hash;
+          // /reset-password renders outside the auth gate and picks it up.
+          // Supabase only redirects to allowlisted URLs, so this origin must
+          // be under Authentication → URL Configuration → Redirect URLs.
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        return { error: error?.message ?? null };
+      },
+      updatePassword: async (password) => {
+        const { error } = await supabase.auth.updateUser({ password });
+        return { error: error?.message ?? null };
       },
     }),
     [session, loading],

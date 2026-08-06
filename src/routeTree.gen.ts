@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CampaignsRouteImport } from './routes/campaigns'
 import { Route as GroupsRouteImport } from './routes/groups'
 import { Route as ProspectsRouteImport } from './routes/prospects'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TemplatesRouteImport } from './routes/templates'
 import { Route as UTokenRouteImport } from './routes/u/$token'
@@ -37,6 +38,11 @@ const ProspectsRoute = ProspectsRouteImport.update({
   path: '/prospects',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -58,6 +64,7 @@ export interface FileRoutesByFullPath {
   '/campaigns': typeof CampaignsRoute
   '/groups': typeof GroupsRoute
   '/prospects': typeof ProspectsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/templates': typeof TemplatesRoute
   '/u/$token': typeof UTokenRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/campaigns': typeof CampaignsRoute
   '/groups': typeof GroupsRoute
   '/prospects': typeof ProspectsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/templates': typeof TemplatesRoute
   '/u/$token': typeof UTokenRoute
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   '/campaigns': typeof CampaignsRoute
   '/groups': typeof GroupsRoute
   '/prospects': typeof ProspectsRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/templates': typeof TemplatesRoute
   '/u/$token': typeof UTokenRoute
@@ -88,6 +97,7 @@ export interface FileRouteTypes {
     | '/campaigns'
     | '/groups'
     | '/prospects'
+    | '/reset-password'
     | '/settings'
     | '/templates'
     | '/u/$token'
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
     | '/campaigns'
     | '/groups'
     | '/prospects'
+    | '/reset-password'
     | '/settings'
     | '/templates'
     | '/u/$token'
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '/campaigns'
     | '/groups'
     | '/prospects'
+    | '/reset-password'
     | '/settings'
     | '/templates'
     | '/u/$token'
@@ -116,6 +128,7 @@ export interface RootRouteChildren {
   CampaignsRoute: typeof CampaignsRoute
   GroupsRoute: typeof GroupsRoute
   ProspectsRoute: typeof ProspectsRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   TemplatesRoute: typeof TemplatesRoute
   UTokenRoute: typeof UTokenRoute
@@ -151,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProspectsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -180,6 +200,7 @@ const rootRouteChildren: RootRouteChildren = {
   CampaignsRoute: CampaignsRoute,
   GroupsRoute: GroupsRoute,
   ProspectsRoute: ProspectsRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   TemplatesRoute: TemplatesRoute,
   UTokenRoute: UTokenRoute,
