@@ -25,13 +25,21 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
 // Start installs this automatically when src/start.ts is absent; defining the
 // file opts out, so re-add it explicitly to keep server functions protected
 // from cross-site requests.
-const csrfMiddleware = createCsrfMiddleware({
-  filter: (ctx) => ctx.handlerType === "serverFn",
-});
+//
+// The call is deferred into the createStart factory: calling it at module
+// scope crashes the Nitro (Vercel) bundle, where this module evaluates before
+// the framework's exports are initialised — same cycle as the import note
+// above, just at call time instead of import time.
+let csrfMiddleware: ReturnType<typeof createCsrfMiddleware> | undefined;
 
 export const startInstance = createStart(() => ({
   // Without this the server cannot identify the caller of a server function:
   // the Supabase session lives in browser storage, not in a cookie.
   functionMiddleware: [attachAuth],
-  requestMiddleware: [errorMiddleware, csrfMiddleware],
+  requestMiddleware: [
+    errorMiddleware,
+    (csrfMiddleware ??= createCsrfMiddleware({
+      filter: (ctx) => ctx.handlerType === "serverFn",
+    })),
+  ],
 }));
