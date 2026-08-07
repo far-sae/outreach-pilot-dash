@@ -15,7 +15,7 @@ import {
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { SequencesPanel } from "@/components/sequences-panel";
 import { TemplateStatsPanel } from "@/components/template-stats-panel";
-import { footerText, htmlToText, textToHtml } from "@/lib/merge";
+import { cleanRedundantLinks, footerText, htmlToText, textToHtml } from "@/lib/merge";
 import { cn } from "@/lib/utils";
 import { mergeCopy, useOutreach } from "@/store/outreach-store";
 import { MERGE_TAGS, type Prospect } from "@/data/outreach";
@@ -246,11 +246,11 @@ function TemplatesPage() {
                       <Highlighted text={active.subject} prospect={sample} />
                     </p>
                     <p className="mt-3 text-sm break-words whitespace-pre-wrap">
-                      <Highlighted text={active.body} prospect={sample} />
+                      <Highlighted text={cleanRedundantLinks(active.body)} prospect={sample} />
                     </p>
                     {settings.signature && (
                       <p className="mt-4 border-t border-border pt-3 text-sm break-words whitespace-pre-wrap text-muted-foreground">
-                        {settings.signature}
+                        {cleanRedundantLinks(settings.signature)}
                       </p>
                     )}
                     <p className="mt-4 text-xs break-words whitespace-pre-wrap text-muted-foreground">

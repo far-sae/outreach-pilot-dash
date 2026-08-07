@@ -89,7 +89,11 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="block">
+    // A div, not a label: a wrapping <label> forwards every click inside it to
+    // its first form control. For fields whose child is a composite widget —
+    // the rich text editor with its toolbar — that meant clicking the writing
+    // area focused the toolbar's font <select> instead of the text.
+    <div className="block">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <div className="mt-1.5">{children}</div>
       {error ? (
@@ -97,7 +101,7 @@ export function Field({
       ) : hint ? (
         <span className="mt-1 block text-xs text-muted-foreground">{hint}</span>
       ) : null}
-    </label>
+    </div>
   );
 }
 

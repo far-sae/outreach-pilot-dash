@@ -26,7 +26,7 @@ import {
   inputClass,
 } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
-import { footerText } from "@/lib/merge";
+import { cleanRedundantLinks, footerText } from "@/lib/merge";
 import { campaignStats, fullName, mergeCopy, useOutreach } from "@/store/outreach-store";
 import type { Recipient } from "@/data/outreach";
 
@@ -479,11 +479,11 @@ function CampaignsPage() {
                 {mergeCopy(template.subject, first)}
               </p>
               <p className="mt-2 text-sm break-words whitespace-pre-wrap">
-                {mergeCopy(template.body, first)}
+                {cleanRedundantLinks(mergeCopy(template.body, first))}
               </p>
               {settings.signature && (
                 <p className="mt-4 border-t border-border pt-3 text-sm break-words whitespace-pre-wrap text-muted-foreground">
-                  {settings.signature}
+                  {cleanRedundantLinks(settings.signature)}
                 </p>
               )}
               <p className="mt-4 text-xs break-words whitespace-pre-wrap text-muted-foreground">

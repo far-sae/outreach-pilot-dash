@@ -78,8 +78,8 @@ export function footerText(o: BodyOptions) {
 }
 
 export function buildTextBody(o: BodyOptions) {
-  const body = applyUnsubscribe(o.body, o.unsubscribeUrl);
-  const signature = applyUnsubscribe(o.signature, o.unsubscribeUrl).trim();
+  const body = cleanRedundantLinks(applyUnsubscribe(o.body, o.unsubscribeUrl));
+  const signature = cleanRedundantLinks(applyUnsubscribe(o.signature, o.unsubscribeUrl)).trim();
   return [body, signature ? `--\n${signature}` : "", footerText(o)].filter(Boolean).join("\n\n");
 }
 
@@ -100,13 +100,13 @@ export function buildHtmlBody(o: BodyOptions): string | undefined {
   const rich = o.bodyHtml?.trim();
   const bodyMarkup = rich
     ? applyUnsubscribe(rich, o.unsubscribeUrl)
-    : `<p style="margin:0 0 16px">${br(applyUnsubscribe(o.body, o.unsubscribeUrl))}</p>`;
+    : `<p style="margin:0 0 16px">${br(cleanRedundantLinks(applyUnsubscribe(o.body, o.unsubscribeUrl)))}</p>`;
 
   // Rich versions win when present; otherwise the plain text is marked up.
   const richSignature = o.signatureHtml?.trim();
   const signatureMarkup = richSignature
     ? applyUnsubscribe(richSignature, o.unsubscribeUrl)
-    : br(applyUnsubscribe(o.signature, o.unsubscribeUrl).trim());
+    : br(cleanRedundantLinks(applyUnsubscribe(o.signature, o.unsubscribeUrl)).trim());
 
   const richFooter = o.unsubscribeHtml?.trim();
   const footer = richFooter
@@ -164,6 +164,29 @@ function plainLink(href: string, innerHtml: string) {
       .replace(/\/+$/, "");
   if (!text || canon(text) === canon(target)) return text || target;
   return `${text} (${target})`;
+}
+
+const canonUrl = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/^mailto:/, "")
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/+$/, "");
+
+/**
+ * Strips "x (mailto:x)" / "www.x.com (http://www.x.com/)" pairs that an older
+ * htmlToText baked into saved signatures and bodies. Only collapses a pair
+ * when the parenthesised address is the same as the text before it, so real
+ * parentheticals are left alone. Run on stored plain text before showing or
+ * sending it, since old rows still carry the duplicated form.
+ */
+export function cleanRedundantLinks(text: string) {
+  return text.replace(
+    /(\S+)\s*\(\s*((?:mailto:|https?:\/\/|www\.)[^)\s]*)\s*\)/gi,
+    (match, before: string, inside: string) =>
+      canonUrl(before) === canonUrl(inside) ? before : match,
+  );
 }
 
 /** Rough plain-text fallback derived from rich HTML, for the text/plain part. */
