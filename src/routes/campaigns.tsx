@@ -26,6 +26,7 @@ import {
   inputClass,
 } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
+import { footerText } from "@/lib/merge";
 import { campaignStats, fullName, mergeCopy, useOutreach } from "@/store/outreach-store";
 import type { Recipient } from "@/data/outreach";
 
@@ -474,13 +475,26 @@ function CampaignsPage() {
                 To {first.email} · from {settings.senderName} &lt;{settings.fromEmail}&gt; ·
                 reply-to {settings.replyTo}
               </p>
-              <p className="mt-3 text-sm font-medium">{mergeCopy(template.subject, first)}</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{mergeCopy(template.body, first)}</p>
+              <p className="mt-3 text-sm font-medium break-words">
+                {mergeCopy(template.subject, first)}
+              </p>
+              <p className="mt-2 text-sm break-words whitespace-pre-wrap">
+                {mergeCopy(template.body, first)}
+              </p>
               {settings.signature && (
-                <p className="mt-4 whitespace-pre-wrap border-t border-border pt-3 text-sm text-muted-foreground">
+                <p className="mt-4 border-t border-border pt-3 text-sm break-words whitespace-pre-wrap text-muted-foreground">
                   {settings.signature}
                 </p>
               )}
+              <p className="mt-4 text-xs break-words whitespace-pre-wrap text-muted-foreground">
+                {footerText({
+                  body: "",
+                  signature: "",
+                  unsubscribeText: settings.unsubscribeText,
+                  unsubscribeUrl: "<unsubscribe link>",
+                  replyTo: settings.replyTo,
+                })}
+              </p>
             </div>
           ) : (
             <p className="mt-4 text-xs text-muted-foreground">

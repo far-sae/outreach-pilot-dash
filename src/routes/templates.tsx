@@ -15,7 +15,7 @@ import {
 import { RichTextEditor } from "@/components/rich-text-editor";
 import { SequencesPanel } from "@/components/sequences-panel";
 import { TemplateStatsPanel } from "@/components/template-stats-panel";
-import { htmlToText, textToHtml } from "@/lib/merge";
+import { footerText, htmlToText, textToHtml } from "@/lib/merge";
 import { cn } from "@/lib/utils";
 import { mergeCopy, useOutreach } from "@/store/outreach-store";
 import { MERGE_TAGS, type Prospect } from "@/data/outreach";
@@ -242,17 +242,26 @@ function TemplatesPage() {
                     <p className="text-xs text-muted-foreground">
                       To {sample.email} · from {settings.senderName} &lt;{settings.fromEmail}&gt;
                     </p>
-                    <p className="mt-3 text-sm font-medium">
+                    <p className="mt-3 text-sm font-medium break-words">
                       <Highlighted text={active.subject} prospect={sample} />
                     </p>
-                    <p className="mt-3 whitespace-pre-wrap text-sm">
+                    <p className="mt-3 text-sm break-words whitespace-pre-wrap">
                       <Highlighted text={active.body} prospect={sample} />
                     </p>
                     {settings.signature && (
-                      <p className="mt-4 whitespace-pre-wrap border-t border-border pt-3 text-sm text-muted-foreground">
+                      <p className="mt-4 border-t border-border pt-3 text-sm break-words whitespace-pre-wrap text-muted-foreground">
                         {settings.signature}
                       </p>
                     )}
+                    <p className="mt-4 text-xs break-words whitespace-pre-wrap text-muted-foreground">
+                      {footerText({
+                        body: "",
+                        signature: "",
+                        unsubscribeText: settings.unsubscribeText,
+                        unsubscribeUrl: "<unsubscribe link>",
+                        replyTo: settings.replyTo,
+                      })}
+                    </p>
                   </div>
                 ) : (
                   <EmptyState

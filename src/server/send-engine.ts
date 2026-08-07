@@ -263,7 +263,9 @@ export async function drainQueue(
           to: prospect.email,
           subject,
           text: buildTextBody(bodyOpts),
-          ...(html ? { html } : {}),
+          // Locally added images arrive as data: URLs; this turns them into
+          // proper cid: inline attachments, which mail clients display.
+          ...(html ? { html, attachDataUrls: true } : {}),
           headers: plainOnly
             ? // mailto only: the https + One-Click pairing reads as bulk mail
               // and is a large part of what lands a message in Promotions.

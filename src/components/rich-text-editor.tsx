@@ -11,7 +11,15 @@ import {
   Underline,
   Undo2,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -124,13 +132,49 @@ export function RichTextEditor({
     exec("createLink", url);
   }
 
+  const fileRef = useRef<HTMLInputElement>(null);
+
   function insertImage() {
-    const url = window.prompt(
-      "Image URL\n\nMust be a publicly reachable https:// address — most clients block images embedded in the message itself.",
-      "https://",
-    );
-    if (!url) return;
-    exec("insertImage", url);
+    fileRef.current?.click();
+  }
+
+  function onImageFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // Same file twice in a row should still fire change.
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert(
+        "That image is over 2 MB. Large embedded images get emails clipped or flagged — resize it and try again.",
+      );
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Embedded as a data URL; the send pipeline converts it to a proper
+      // inline attachment so mail clients actually display it.
+      restore();
+      document.execCommand("insertImage", false, String(reader.result));
+      emit();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /**
+   * A click on the padding or the empty space below the last line targets the
+   * contentEditable itself rather than a text node, and the browser leaves the
+   * caret wherever it was. Snap it to the end so clicking anywhere just works.
+   */
+  function focusClickedArea(e: MouseEvent<HTMLDivElement>) {
+    const el = ref.current;
+    if (!el || e.target !== el) return;
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    remember();
   }
 
   return (
@@ -222,6 +266,15 @@ export function RichTextEditor({
         <ToolButton label="Insert image" onMouseDown={remember} onClick={insertImage}>
           <ImageIcon className="h-3.5 w-3.5" />
         </ToolButton>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          aria-hidden="true"
+          tabIndex={-1}
+          onChange={onImageFile}
+        />
 
         <Divider />
 
@@ -282,7 +335,8 @@ export function RichTextEditor({
           }}
           onKeyUp={remember}
           onMouseUp={remember}
-          className="min-h-56 px-3 py-2.5 text-sm leading-relaxed outline-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]"
+          onClick={focusClickedArea}
+          className="min-h-56 cursor-text px-3 py-2.5 text-sm leading-relaxed outline-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] focus:before:content-none [&_img]:h-auto [&_img]:max-w-full"
         />
       )}
     </div>

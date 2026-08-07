@@ -51,7 +51,8 @@ export type BodyOptions = {
   plainOnly?: boolean | undefined;
 };
 
-function footerText(o: BodyOptions) {
+/** Exported so previews can show the exact footer the send pipeline appends. */
+export function footerText(o: BodyOptions) {
   const custom = o.unsubscribeText?.trim();
 
   // Custom wording is used exactly as written. If it contains {{unsubscribe}}
@@ -143,13 +144,37 @@ export function textToHtml(text: string) {
     .join("");
 }
 
+/**
+ * One link, rendered for plain text. "Book a meeting (https://…)" reads fine,
+ * but when the visible text already is the address — the common case for
+ * typed-out links and email addresses — repeating it in parentheses produces
+ * the "www.x.com (http://www.x.com/)" noise cold-mail readers notice.
+ */
+function plainLink(href: string, innerHtml: string) {
+  const text = innerHtml
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+  const target = href.replace(/^mailto:/i, "").trim();
+  const canon = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/\/+$/, "");
+  if (!text || canon(text) === canon(target)) return text || target;
+  return `${text} (${target})`;
+}
+
 /** Rough plain-text fallback derived from rich HTML, for the text/plain part. */
 export function htmlToText(html: string) {
   return html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|h[1-6]|li)>/gi, "\n\n")
     .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/gi, "$2 ($1)")
+    .replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) =>
+      plainLink(href, inner),
+    )
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
