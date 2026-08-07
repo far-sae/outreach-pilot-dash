@@ -142,21 +142,74 @@ export function RichTextEditor({
     const file = e.target.files?.[0];
     e.target.value = ""; // Same file twice in a row should still fire change.
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      window.alert(
-        "That image is over 2 MB. Large embedded images get emails clipped or flagged — resize it and try again.",
-      );
+    if (file.size > 8 * 1024 * 1024) {
+      window.alert("That image is over 8 MB — pick something smaller.");
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
-      // Embedded as a data URL; the send pipeline converts it to a proper
-      // inline attachment so mail clients actually display it.
-      restore();
-      document.execCommand("insertImage", false, String(reader.result));
-      emit();
+      const probe = new Image();
+      probe.onload = () => {
+        // Downscale to email width before embedding: a phone photo is several
+        // MB, which bloats the message and gets it clipped. 800px is wider
+        // than any mail client renders anyway.
+        let src = String(reader.result);
+        const MAX_W = 800;
+        if (probe.width > MAX_W) {
+          const canvas = document.createElement("canvas");
+          canvas.width = MAX_W;
+          canvas.height = Math.round((probe.height / probe.width) * MAX_W);
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(probe, 0, 0, canvas.width, canvas.height);
+            src = canvas.toDataURL(
+              file.type === "image/png" ? "image/png" : "image/jpeg",
+              0.85,
+            );
+          }
+        }
+        // Embedded as a data URL; the send pipeline converts it to a proper
+        // inline attachment so mail clients actually display it.
+        restore();
+        document.execCommand("insertImage", false, src);
+        emit();
+      };
+      probe.src = String(reader.result);
     };
     reader.readAsDataURL(file);
+  }
+
+  /** The image the user last clicked, with the floating menu's position. */
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [imgSel, setImgSel] = useState<{
+    el: HTMLImageElement;
+    top: number;
+    left: number;
+  } | null>(null);
+
+  function selectImage(img: HTMLImageElement) {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const wrapBox = wrap.getBoundingClientRect();
+    const imgBox = img.getBoundingClientRect();
+    let top = imgBox.top - wrapBox.top - 34;
+    if (top < 40) top = imgBox.top - wrapBox.top + 8; // don't cover the toolbar
+    setImgSel({ el: img, top, left: Math.max(8, imgBox.left - wrapBox.left) });
+  }
+
+  function resizeSelectedImage(width: string) {
+    if (!imgSel) return;
+    imgSel.el.style.width = width;
+    imgSel.el.style.height = "auto";
+    setImgSel(null);
+    emit();
+  }
+
+  function removeSelectedImage() {
+    if (!imgSel) return;
+    imgSel.el.remove();
+    setImgSel(null);
+    emit();
   }
 
   /**
@@ -165,6 +218,12 @@ export function RichTextEditor({
    * caret wherever it was. Snap it to the end so clicking anywhere just works.
    */
   function focusClickedArea(e: MouseEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement;
+    if (target instanceof HTMLImageElement) {
+      selectImage(target);
+      return;
+    }
+    setImgSel(null);
     const el = ref.current;
     if (!el || e.target !== el) return;
     el.focus();
@@ -178,7 +237,46 @@ export function RichTextEditor({
   }
 
   return (
-    <div className={cn("overflow-hidden rounded-lg border border-border bg-card", className)}>
+    <div
+      ref={wrapRef}
+      className={cn("relative overflow-hidden rounded-lg border border-border bg-card", className)}
+    >
+      {imgSel ? (
+        <div
+          className="absolute z-10 flex items-center gap-0.5 rounded-md border border-border bg-card px-1 py-0.5 shadow-sm"
+          style={{ top: imgSel.top, left: imgSel.left }}
+        >
+          <span className="px-1 text-[10px] text-muted-foreground">Image:</span>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-xs hover:bg-surface-muted"
+            onClick={() => resizeSelectedImage("25%")}
+          >
+            Small
+          </button>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-xs hover:bg-surface-muted"
+            onClick={() => resizeSelectedImage("50%")}
+          >
+            Medium
+          </button>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-xs hover:bg-surface-muted"
+            onClick={() => resizeSelectedImage("100%")}
+          >
+            Full
+          </button>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-xs text-danger hover:bg-surface-muted"
+            onClick={removeSelectedImage}
+          >
+            Remove
+          </button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-1 border-b border-border bg-surface-muted px-2 py-1.5">
         <select
           aria-label="Font"
@@ -328,7 +426,10 @@ export function RichTextEditor({
           aria-multiline="true"
           aria-label="Email body"
           data-placeholder={placeholder ?? "Write your email…"}
-          onInput={emit}
+          onInput={() => {
+            setImgSel(null);
+            emit();
+          }}
           onBlur={() => {
             remember();
             emit();
