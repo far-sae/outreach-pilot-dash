@@ -150,22 +150,6 @@ export function textToHtml(text: string) {
  * typed-out links and email addresses — repeating it in parentheses produces
  * the "www.x.com (http://www.x.com/)" noise cold-mail readers notice.
  */
-function plainLink(href: string, innerHtml: string) {
-  const text = innerHtml
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .trim();
-  const target = href.replace(/^mailto:/i, "").trim();
-  const canon = (s: string) =>
-    s
-      .toLowerCase()
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .replace(/\/+$/, "");
-  if (!text || canon(text) === canon(target)) return text || target;
-  return `${text} (${target})`;
-}
-
 const canonUrl = (s: string) =>
   s
     .toLowerCase()
@@ -174,28 +158,53 @@ const canonUrl = (s: string) =>
     .replace(/^www\./, "")
     .replace(/\/+$/, "");
 
+function plainLink(href: string, innerHtml: string) {
+  const text = innerHtml
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+  // An anchor with no visible text is invisible in the editor; writing its
+  // href out would conjure text the user cannot see or delete.
+  if (!text) return "";
+  const target = href.replace(/^mailto:/i, "").trim();
+  if (canonUrl(text) === canonUrl(target)) return text;
+  return `${text} (${target})`;
+}
+
 /**
- * Strips "x (mailto:x)" / "www.x.com (http://www.x.com/)" pairs that an older
- * htmlToText baked into saved signatures and bodies. Only collapses a pair
- * when the parenthesised address is the same as the text before it, so real
- * parentheticals are left alone. Run on stored plain text before showing or
- * sending it, since old rows still carry the duplicated form.
+ * Strips the duplicated-address forms older conversions baked into saved
+ * signatures and bodies: "x (mailto:x)" / "www.x.com (http://www.x.com/)"
+ * pairs, and the same address repeated back-to-back ("urlurl", "url url").
+ * A pair only collapses when both sides are the same address, so real
+ * parentheticals and lists of different links are left alone. Run on stored
+ * plain text before showing or sending it, since old rows still carry the
+ * duplicated forms.
  */
 export function cleanRedundantLinks(text: string) {
-  return text.replace(
+  let out = text.replace(
     /(\S+)\s*\(\s*((?:mailto:|https?:\/\/|www\.)[^)\s]*)\s*\)/gi,
     (match, before: string, inside: string) =>
       canonUrl(before) === canonUrl(inside) ? before : match,
   );
+  const repeated = /((?:mailto:|https?:\/\/|www\.)\S+?)(\s*)\1(?=[\s).,]|$)/gi;
+  const parenFirst = /\(\s*((?:mailto:|https?:\/\/|www\.)[^)\s]*)\s*\)\s*\1(?=[\s).,]|$)/gi;
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(repeated, "$1").replace(parenFirst, "$1");
+  } while (out !== prev);
+  return out;
 }
 
 /** Rough plain-text fallback derived from rich HTML, for the text/plain part. */
 export function htmlToText(html: string) {
-  return html
+  const text = html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|h[1-6]|li)>/gi, "\n\n")
     .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) =>
+    // \shref= keeps attributes like data-saferedirecturl= (pasted from Gmail)
+    // from being read as the link target.
+    .replace(/<a[^>]*\shref="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) =>
       plainLink(href, inner),
     )
     .replace(/<[^>]+>/g, "")
@@ -206,4 +215,7 @@ export function htmlToText(html: string) {
     .replace(/&quot;/g, '"')
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+  // Content pasted from a received copy of an old email can carry the
+  // duplicated address forms inside the HTML itself.
+  return cleanRedundantLinks(text);
 }
