@@ -153,6 +153,10 @@ export function textToHtml(text: string) {
 const canonUrl = (s: string) =>
   s
     .toLowerCase()
+    // Link text often carries the brackets the user typed around it —
+    // "(https://x.com)" is still the same address as https://x.com.
+    .replace(/^[(<[]+/, "")
+    .replace(/[)>\]]+$/, "")
     .replace(/^mailto:/, "")
     .replace(/^https?:\/\//, "")
     .replace(/^www\./, "")
@@ -181,17 +185,25 @@ function plainLink(href: string, innerHtml: string) {
  * duplicated forms.
  */
 export function cleanRedundantLinks(text: string) {
-  let out = text.replace(
-    /(\S+)\s*\(\s*((?:mailto:|https?:\/\/|www\.)[^)\s]*)\s*\)/gi,
-    (match, before: string, inside: string) =>
-      canonUrl(before) === canonUrl(inside) ? before : match,
+  // A URL, a www. address, a mailto:, or a bare email address.
+  const addr = "(?:mailto:|https?:\\/\\/|www\\.)[^)\\s]*|[^\\s()<>\\[\\]]+@[^\\s()<>\\[\\]]+";
+  // "addr (addr)" — the before side may itself be wrapped in brackets.
+  const parenPair = new RegExp(
+    `([(<\\[]?(?:${addr})[)>\\]]?)\\s*\\(\\s*(${addr})\\s*\\)`,
+    "gi",
   );
   const repeated = /((?:mailto:|https?:\/\/|www\.)\S+?)(\s*)\1(?=[\s).,]|$)/gi;
   const parenFirst = /\(\s*((?:mailto:|https?:\/\/|www\.)[^)\s]*)\s*\)\s*\1(?=[\s).,]|$)/gi;
+  let out = text;
   let prev;
   do {
     prev = out;
-    out = out.replace(repeated, "$1").replace(parenFirst, "$1");
+    out = out
+      .replace(parenPair, (match, before: string, inside: string) =>
+        canonUrl(before) === canonUrl(inside) ? before : match,
+      )
+      .replace(repeated, "$1")
+      .replace(parenFirst, "$1");
   } while (out !== prev);
   return out;
 }
